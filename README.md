@@ -91,13 +91,22 @@ se font dans l'assistant officiel, exactement comme dans le depot fusionne.
 
 ### `auth_setup` Du Collecteur
 
-Choisir `all`. Le profil Hedgehog affiche moins de questions que le Core :
+Choisir `all`. Le profil Hedgehog n'affiche pas les questions Core relatives a
+la methode Basic, au compte administrateur ou au certificat HTTPS Web. Repondre
+aux questions affichees comme suit :
 
-- conserver Basic lorsque le choix est propose ;
-- ne pas remplacer les identifiants OpenSearch deja fournis par le bundle ;
-- generer le secret Valkey et le secret Arkime lorsqu'ils sont demandes ;
-- ne pas utiliser le transfert `croc`, puisque les bundles ont deja ete copies ;
-- ne saisir aucun mot de passe sur la ligne de commande.
+| Question | Reponse recommandee | Explication |
+|---|---|---|
+| Store username/password for OpenSearch | `No` | le bundle `hedgehog` contient deja les comptes limites |
+| Generate internal Valkey password | `Yes` | cree un secret local unique |
+| Arkime viewer cluster secret | `Yes` | cree le secret local Arkime |
+| Receive client certificates from Malcolm | `No` | le bundle Beats du Core a deja ete importe |
+
+Ne pas utiliser le transfert `croc`, puisque les bundles ont deja ete copies,
+et ne saisir aucun mot de passe sur la ligne de commande. Si votre ecran affiche
+une question supplementaire issue d'un mode optionnel choisi dans l'installateur,
+conserver la valeur deja fournie par les bundles plutot que de creer un compte
+administrateur partage.
 
 Si le groupe Docker vient d'etre attribue et que la reprise automatique echoue :
 
