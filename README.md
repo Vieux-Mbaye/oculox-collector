@@ -1,0 +1,167 @@
+# Oculox Collector / Hedgehog
+
+Ce depot deploie un Collecteur Oculox. Il conserve sans modification les
+services et choix du profil `hedgehog` du depot Gitea : capture PCAP, Zeek,
+Suricata, Arkime, Strelka, Filescan, Filebeat, pcap-monitor et services live.
+
+## 1. Prerequis
+
+- VM Debian/Ubuntu avec compte `sudo` ;
+- heure synchronisee avec Core et Cluster ;
+- interface SPAN/TAP visible par `ip -br link` ;
+- sortie TCP vers Core `5044` et `5045` ;
+- sortie HTTPS vers Cluster `9200` si Arkime/pcap-monitor ecrivent directement ;
+- un bundle Beats unique cree sur le Core ;
+- le bundle OpenSearch `hedgehog` cree sur le Cluster.
+
+## 2. Creer Les Bundles
+
+Sur le Core :
+
+```bash
+./oculox collector-bundle <NOM_COLLECTEUR> <IP_CORE_OU_DNS> \
+  ~/oculox-bundles/<NOM_COLLECTEUR>
+```
+
+Sur le Cluster :
+
+```bash
+./oculox cluster client-bundle hedgehog ~/oculox-bundles/hedgehog
+```
+
+Copier les deux repertoires sur la VM Collecteur par SCP, puis verifier :
+
+```bash
+(cd ~/oculox-bundles/<NOM_COLLECTEUR> && sha256sum -c SHA256SUMS)
+(cd ~/oculox-bundles/hedgehog && sha256sum -c SHA256SUMS)
+```
+
+Chaque collecteur doit avoir son propre certificat Beats. Ne reutilisez pas le
+meme bundle entre plusieurs capteurs.
+
+## 3. Installer Sans Changer La Procedure
+
+```bash
+cd ~/oculox-collector
+./oculox install hedgehog \
+  --principal-host <IP_CORE_OU_DNS> \
+  --collector-name <NOM_COLLECTEUR> \
+  --bundle ~/oculox-bundles/<NOM_COLLECTEUR> \
+  --opensearch-bundle ~/oculox-bundles/hedgehog
+```
+
+Arguments :
+
+| Argument | Signification |
+|---|---|
+| `install hedgehog` | selectionne le profil Collecteur existant |
+| `--principal-host` | Core qui ecoute Filebeat sur `5044/5045` |
+| `--collector-name` | identite unique et stable du capteur |
+| `--bundle` | CA et certificat mTLS Beats propres au capteur |
+| `--opensearch-bundle` | CA et comptes OpenSearch limites au role Hedgehog |
+
+## 4. Choix Dans L'installateur Malcolm
+
+| Ecran | Valeur attendue |
+|---|---|
+| Profil | `hedgehog` |
+| Stockage principal | `opensearch-remote` |
+| URL OpenSearch | `https://<IP_CLUSTER>:9200` |
+| Verification TLS | `Yes` |
+| Capture live | `Yes` pour un capteur raccorde a un miroir |
+| Interface de capture | nom exact retourne par `ip -br link` |
+| Zeek | `Yes` |
+| Suricata | `Yes` |
+| Arkime live | `Yes` si requis par l'architecture |
+| Hote Logstash | ne pas remplacer les deux destinations fournies par le bundle |
+
+Ne desactivez et ne supprimez aucun service dans Compose. Les choix de capture
+se font dans l'assistant officiel, exactement comme dans le depot fusionne.
+
+### `auth_setup` Du Collecteur
+
+Choisir `all`. Le profil Hedgehog affiche moins de questions que le Core :
+
+- conserver Basic lorsque le choix est propose ;
+- ne pas remplacer les identifiants OpenSearch deja fournis par le bundle ;
+- generer le secret Valkey et le secret Arkime lorsqu'ils sont demandes ;
+- ne pas utiliser le transfert `croc`, puisque les bundles ont deja ete copies ;
+- ne saisir aucun mot de passe sur la ligne de commande.
+
+Si le groupe Docker vient d'etre attribue et que la reprise automatique echoue :
+
+```bash
+./oculox resume-install hedgehog \
+  --principal-host <IP_CORE_OU_DNS> \
+  --collector-name <NOM_COLLECTEUR> \
+  --bundle ~/oculox-bundles/<NOM_COLLECTEUR> \
+  --opensearch-bundle ~/oculox-bundles/hedgehog
+```
+
+## 5. Verifier Le Collecteur
+
+```bash
+./oculox status
+./oculox validate
+./oculox logs filebeat
+grep -R -nE 'hosts:|loadbalance:|verification_mode:' dev/generated/filebeat
+```
+
+Resultat attendu :
+
+- services du profil Hedgehog en cours d'execution ;
+- destinations `<CORE>:5044` et `<CORE>:5045` ;
+- `loadbalance: true` ;
+- `verification_mode: full` ;
+- connexions Filebeat etablies sans erreur TLS.
+
+## 6. Test De Bout En Bout
+
+Sur le Core :
+
+```bash
+mkdir -p dev/generated/validation/recette
+./oculox verify ingestion baseline \
+  --output dev/generated/validation/recette/baseline.json
+```
+
+Sur le Collecteur :
+
+```bash
+./oculox verify ingestion inject \
+  --pcap /chemin/vers/test.pcap \
+  --run-id recette-01 \
+  --output dev/generated/validation/recette/collector.json
+```
+
+Copier le rapport Collecteur sur le Core, puis :
+
+```bash
+./oculox verify ingestion finalize \
+  --baseline dev/generated/validation/recette/baseline.json \
+  --collector-report dev/generated/validation/recette/collector.json \
+  --output dev/generated/validation/recette/final.json
+```
+
+Le resultat attendu est `INGESTION_RESULT=PASS`.
+
+## 7. Exploitation
+
+```bash
+./oculox start
+./oculox restart [service...]
+./oculox status
+./oculox logs [service...]
+./oculox pull
+./oculox validate
+./oculox stop
+```
+
+`stop` conserve les volumes et les registres Filebeat. Ne jamais utiliser
+`docker compose down -v` pendant l'exploitation normale.
+
+Documentation complementaire :
+
+- `dev/docs/13_installation_resiliente_principal_hedgehog.md` ;
+- `dev/docs/Opensearch/guide_installation_vm_neuves.md` ;
+- `docs/UPSTREAM_README.md`.
