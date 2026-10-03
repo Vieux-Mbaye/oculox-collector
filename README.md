@@ -14,7 +14,18 @@ Suricata, Arkime, Strelka, Filescan, Filebeat, pcap-monitor et services live.
 - un bundle Beats unique cree sur le Core ;
 - le bundle OpenSearch `hedgehog` cree sur le Cluster.
 
-## 2. Creer Les Bundles
+## 2. Cloner Le Depot Collecteur
+
+```bash
+git clone <URL_DEPOT_OCULOX_COLLECTOR> ~/oculox-collector
+cd ~/oculox-collector
+git status --short
+```
+
+La derniere commande ne doit rien afficher. Utilisez la meme version ou le meme
+tag Oculox sur les trois VM.
+
+## 3. Creer Les Bundles
 
 Sur le Core :
 
@@ -39,7 +50,7 @@ Copier les deux repertoires sur la VM Collecteur par SCP, puis verifier :
 Chaque collecteur doit avoir son propre certificat Beats. Ne reutilisez pas le
 meme bundle entre plusieurs capteurs.
 
-## 3. Installer Sans Changer La Procedure
+## 4. Installer Sans Changer La Procedure
 
 ```bash
 cd ~/oculox-collector
@@ -60,7 +71,7 @@ Arguments :
 | `--bundle` | CA et certificat mTLS Beats propres au capteur |
 | `--opensearch-bundle` | CA et comptes OpenSearch limites au role Hedgehog |
 
-## 4. Choix Dans L'installateur Malcolm
+## 5. Choix Dans L'installateur Malcolm
 
 | Ecran | Valeur attendue |
 |---|---|
@@ -98,7 +109,7 @@ Si le groupe Docker vient d'etre attribue et que la reprise automatique echoue :
   --opensearch-bundle ~/oculox-bundles/hedgehog
 ```
 
-## 5. Verifier Le Collecteur
+## 6. Verifier Le Collecteur
 
 ```bash
 ./oculox status
@@ -115,7 +126,7 @@ Resultat attendu :
 - `verification_mode: full` ;
 - connexions Filebeat etablies sans erreur TLS.
 
-## 6. Test De Bout En Bout
+## 7. Test De Bout En Bout
 
 Sur le Core :
 
@@ -145,7 +156,7 @@ Copier le rapport Collecteur sur le Core, puis :
 
 Le resultat attendu est `INGESTION_RESULT=PASS`.
 
-## 7. Exploitation
+## 8. Exploitation
 
 ```bash
 ./oculox start
