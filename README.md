@@ -34,15 +34,23 @@ Sur le Core :
   ~/oculox-bundles/<NOM_COLLECTEUR>
 ```
 
-Sur le Cluster :
+L'installation du Cluster cree automatiquement le bundle OpenSearch Hedgehog :
 
-```bash
-./oculox cluster client-bundle hedgehog ~/oculox-bundles/hedgehog
+```text
+~/oculox-cluster/dev/generated/opensearch-cluster/client-bundles/hedgehog
 ```
 
-Copier les deux repertoires sur la VM Collecteur par SCP, puis verifier :
+La commande `cluster client-bundle hedgehog` n'est donc pas necessaire dans le
+parcours normal. Elle reste disponible pour reexporter le bundle automatique
+s'il a ete supprime ou si un autre emplacement de sortie est requis.
+
+Copier le bundle Beats depuis le Core et le bundle `hedgehog` automatique
+depuis le Cluster sur la VM Collecteur, puis verifier les deux repertoires :
 
 ```bash
+mkdir -p ~/oculox-bundles
+scp -r <UTILISATEUR_CORE>@<IP_CORE>:~/oculox-bundles/<NOM_COLLECTEUR> ~/oculox-bundles/
+scp -r <UTILISATEUR_CLUSTER>@<IP_CLUSTER>:~/oculox-cluster/dev/generated/opensearch-cluster/client-bundles/hedgehog ~/oculox-bundles/
 (cd ~/oculox-bundles/<NOM_COLLECTEUR> && sha256sum -c SHA256SUMS)
 (cd ~/oculox-bundles/hedgehog && sha256sum -c SHA256SUMS)
 ```
