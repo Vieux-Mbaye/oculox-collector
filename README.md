@@ -14,6 +14,18 @@ Suricata, Arkime, Strelka, Filescan, Filebeat, pcap-monitor et services live.
 - un bundle Beats unique cree sur le Core ;
 - le bundle OpenSearch `hedgehog` cree sur le Cluster.
 
+Fiche a remplir :
+
+| Valeur | Exemple | Regle |
+|---|---|---|
+| `IP_CORE_OU_DNS` | `192.168.1.103` | meme identite que le Core |
+| `IP_CLUSTER` | `192.168.1.250` | endpoint OpenSearch |
+| `NOM_COLLECTEUR` | `collector-01` | unique, stable, sans espace |
+| `INTERFACE_CAPTURE` | `ens33` | interface SPAN/TAP reelle |
+
+Verifier `timedatectl status`, `ip -br link`, `ip -s link` et `df -h /`. Une
+interface UP sans paquets issus du SPAN/TAP ne produira aucun evenement.
+
 ## 2. Cloner Le Depot Collecteur
 
 ```bash
@@ -58,6 +70,10 @@ scp -r <UTILISATEUR_CLUSTER>@<IP_CLUSTER>:~/oculox-cluster/dev/generated/opensea
 Chaque collecteur doit avoir son propre certificat Beats. Ne reutilisez pas le
 meme bundle entre plusieurs capteurs.
 
+Les bundles contiennent des secrets. Appliquer `chmod -R go-rwx
+~/oculox-bundles`, ne jamais les versionner et retirer les copies de transfert
+devenues inutiles apres la recette.
+
 ## 4. Installer Sans Changer La Procedure
 
 ```bash
@@ -79,6 +95,10 @@ Arguments :
 | `--bundle` | CA et certificat mTLS Beats propres au capteur |
 | `--opensearch-bundle` | CA et comptes OpenSearch limites au role Hedgehog |
 
+Le script verifie les checksums, le nom du Collecteur, le Core attendu et la
+correspondance certificat/cle. Le nom et le host doivent correspondre exactement
+aux valeurs utilisees lors de la creation du bundle Beats.
+
 ## 5. Choix Dans L'installateur Malcolm
 
 | Ecran | Valeur attendue |
@@ -93,6 +113,16 @@ Arguments :
 | Suricata | `Yes` |
 | Arkime live | `Yes` si requis par l'architecture |
 | Hote Logstash | ne pas remplacer les deux destinations fournies par le bundle |
+
+Pour une capture PCAP standard, activer Arkime live, laisser `Arkime Node Host`
+vide, conserver `PCAP Compression: none` sauf politique explicite, et laisser
+`netsniff-ng` et `tcpdump` desactives. Plusieurs moteurs PCAP simultanes
+dupliquent les captures. Zeek et Suricata peuvent rester actifs en parallele.
+
+WISE est heberge sur le Core, pas sur le profil Hedgehog. Si une URL WISE
+distante est demandee, utiliser `https://<IP_CORE_OU_DNS>/wise/`, sans
+identifiants. Si WISE n'est pas souhaite, le desactiver ne doit pas bloquer
+l'installation ou Filebeat.
 
 Ne desactivez et ne supprimez aucun service dans Compose. Les choix de capture
 se font dans l'assistant officiel, exactement comme dans le depot fusionne.
@@ -143,6 +173,10 @@ Resultat attendu :
 - `verification_mode: full` ;
 - connexions Filebeat etablies sans erreur TLS.
 
+Une requete manuelle OpenSearch sans identifiants peut retourner `401` : cela
+confirme la connectivite et TLS mais pas les droits. La recette d'ingestion est
+le controle fonctionnel final.
+
 ## 7. Test De Bout En Bout
 
 Sur le Core :
@@ -187,6 +221,34 @@ Le resultat attendu est `INGESTION_RESULT=PASS`.
 
 `stop` conserve les volumes et les registres Filebeat. Ne jamais utiliser
 `docker compose down -v` pendant l'exploitation normale.
+
+Apres redemarrage :
+
+```bash
+cd ~/oculox-collector
+./oculox start
+./oculox status
+./oculox logs filebeat
+```
+
+Pendant une indisponibilite temporaire du Core, Filebeat met les evenements en
+file puis reprend. Surveiller le disque pendant une panne longue.
+
+## 9. Depannage Et Recette Finale
+
+| Symptome | Cause probable | Action |
+|---|---|---|
+| bundle refuse | nom/host differents | reprendre les valeurs exactes |
+| checksum invalide | transfert incomplet | recopier le bundle |
+| Filebeat refuse TLS | CA, heure ou host incorrect | verifier bundle et horloge |
+| aucun evenement | interface sans trafic | verifier SPAN/TAP et compteurs RX |
+| PCAP duplique | plusieurs moteurs actifs | garder un seul moteur PCAP |
+| Docker permission denied | groupe non recharge | reconnecter puis `resume-install` |
+
+Le Collecteur est accepte lorsque les deux bundles passent, les services sont
+sains, l'interface recoit du trafic, Filebeat utilise 5044/5045 avec verification
+TLS complete, la recette retourne `INGESTION_RESULT=PASS` et un redemarrage de
+VM remet automatiquement le service en fonctionnement.
 
 Documentation complementaire :
 
