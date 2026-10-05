@@ -224,7 +224,7 @@ prepare_hedgehog() {
         printf '%s\n' '--principal-host, --collector-name et --bundle sont obligatoires' >&2
         exit 2
     }
-    for file in ca.crt client.crt client.key endpoints.env SHA256SUMS; do
+    for file in ca.crt client.crt client.key endpoints.env arkime-viewer.env SHA256SUMS; do
         [[ -s "$BUNDLE/$file" ]] || { printf 'Bundle incomplet : %s\n' "$BUNDLE/$file" >&2; exit 1; }
     done
     (cd "$BUNDLE" && sha256sum -c SHA256SUMS)
@@ -245,6 +245,7 @@ prepare_hedgehog() {
     install -m 0644 "$BUNDLE/ca.crt" "$PROJECT_DIR/dev/generated/pki/ca.crt"
     install -m 0644 "$BUNDLE/client.crt" "$PROJECT_DIR/dev/generated/pki/client.crt"
     install -m 0600 "$BUNDLE/client.key" "$PROJECT_DIR/dev/generated/pki/client.key"
+    ./dev/scripts/configure-collector-arkime.py --bundle "$BUNDLE"
     ./dev/scripts/render-filebeat-ha-config.py \
         --output-dir "$PROJECT_DIR/dev/generated/filebeat" \
         --host "${PRINCIPAL_HOST}:5044" \

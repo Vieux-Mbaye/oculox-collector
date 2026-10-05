@@ -8,6 +8,7 @@ import argparse
 import base64
 import json
 import os
+import socket
 import ssl
 import subprocess
 import sys
@@ -25,6 +26,8 @@ STATE_FILE = PROJECT_DIR / "dev/generated/deployment.env"
 CLIENT_DIR = PROJECT_DIR / "dev/generated/opensearch-clients"
 CA_FILE = PROJECT_DIR / "nginx/ca-trust/oculox-opensearch-ca.crt"
 FILEBEAT_DIR = PROJECT_DIR / "dev/generated/filebeat"
+ARKIME_LIVE_ENV = PROJECT_DIR / "config/arkime-live.env"
+ARKIME_SECRET_ENV = PROJECT_DIR / "config/arkime-secret.env"
 RESULT_ROOT = PROJECT_DIR / "dev/generated/validation/client-connectivity"
 RUNTIME_COMPOSE = PROJECT_DIR / "dev/generated/docker-compose.runtime.yml"
 EXPECTED = {
@@ -120,6 +123,21 @@ def request(
         return error.code, parsed
 
 
+def tls_handshake(endpoint: str, server_name: str) -> tuple[bool, str]:
+    try:
+        host, port_text = endpoint.rsplit(":", 1)
+        context = ssl.create_default_context(cafile=str(PROJECT_DIR / "dev/generated/pki/ca.crt"))
+        context.load_cert_chain(
+            str(PROJECT_DIR / "dev/generated/pki/client.crt"),
+            str(PROJECT_DIR / "dev/generated/pki/client.key"),
+        )
+        with socket.create_connection((host, int(port_text)), timeout=10) as raw:
+            with context.wrap_socket(raw, server_hostname=server_name) as secured:
+                return True, f"TLS {secured.version()}"
+    except (OSError, ssl.SSLError, ValueError) as error:
+        return False, str(error)
+
+
 def main() -> int:
     args = parse_args()
     checks: list[dict[str, Any]] = []
@@ -198,6 +216,38 @@ def main() -> int:
               and hosts == expected_hosts and mtls and no_direct,
               f"hosts={hosts}, loadbalance={output.get('loadbalance')}, direct_opensearch={not no_direct}")
 
+    if role == "hedgehog":
+        principal_host = state.get("OCULOX_PRINCIPAL_HOST", "")
+        for port in (5044, 5045):
+            passed, detail = tls_handshake(f"{principal_host}:{port}", principal_host)
+            check(f"filebeat_mtls_{port}", passed, detail)
+
+    if role == "hedgehog":
+        live = env_file(ARKIME_LIVE_ENV)
+        secret = env_file(ARKIME_SECRET_ENV).get("ARKIME_PASSWORD_SECRET", "")
+        live_enabled = live.get("ARKIME_LIVE_CAPTURE", "false").lower() == "true"
+        node_host = live.get("ARKIME_LIVE_NODE_HOST", "").strip()
+        check("arkime_shared_secret", bool(secret), "présent" if secret else "absent")
+        check(
+            "arkime_node_host",
+            (not live_enabled) or bool(node_host),
+            node_host if live_enabled else "Arkime Live désactivé",
+        )
+        arkime_live = container_for("arkime-live")
+        if live_enabled and arkime_live:
+            inspect = run("docker", "inspect", arkime_live)
+            try:
+                network_mode = json.loads(inspect.stdout)[0]["HostConfig"]["NetworkMode"]
+            except (json.JSONDecodeError, IndexError, KeyError, TypeError):
+                network_mode = ""
+            check("arkime_reachback_host_network", network_mode == "host", network_mode or "absent")
+            try:
+                with socket.create_connection((node_host, 8005), timeout=5):
+                    reachable, detail = True, f"{node_host}:8005 joignable localement"
+            except OSError as error:
+                reachable, detail = False, str(error)
+            check("arkime_reachback_8005", reachable, detail)
+
     nginx = container_for("nginx-proxy") if role == "principal" else None
     if nginx:
         route = run("curl", "-ksS", "-o", "/dev/null", "-w", "%{http_code}",
@@ -205,7 +255,7 @@ def main() -> int:
         check("nginx_proxy_route", route.stdout.strip() in {"200", "301", "302", "401", "403"},
               f"HTTP {route.stdout.strip() or 'aucun'}")
 
-    if role == "principal" and endpoint:
+    if role in {"principal", "hedgehog"} and endpoint:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         arkime_index = f"arkime_client_validation_{stamp}"
         credential = CLIENT_DIR / "arkime.curlrc"
